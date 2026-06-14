@@ -1,0 +1,53 @@
+# Doktores' own research loop - analogous to Joni's autonomy.yml, but OFF by default.
+#
+# It is intentionally NOT scheduled: it runs only on a manual `workflow_dispatch`, and even
+# then it only *drops* research_output packages into a Joni checkout's research_inbox.json.
+# It never writes to Layer 9. To actually let it run on a cadence, a human must consciously
+# add a `schedule:` trigger and wire the JONI_ROOT / API keys. Until then it is a button, not
+# a daemon - matching the "advises, never decides" boundary.
+
+name: research-loop
+
+on:
+  workflow_dispatch:
+    inputs:
+      handoff:
+        description: "Path to a handoff JSON of open conflicts (committed in this repo)"
+        required: false
+        default: "examples/handoff.json"
+      joni_root:
+        description: "Path to a checked-out Joni repo to drop packages into (optional)"
+        required: false
+        default: ""
+      rounds:
+        description: "Max Theorist/Falsifier/Reviewer rounds per task"
+        required: false
+        default: "3"
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+      - name: Run the controlled circle (offline MockLLM by default)
+        env:
+          # Set DOKTORES_USE_REAL_LLM=1 and a key here only when consciously enabling real runs.
+          DOKTORES_USE_REAL_LLM: "0"
+        run: |
+          ARGS="--from-handoff ${{ inputs.handoff }} --rounds ${{ inputs.rounds }}"
+          if [ -n "${{ inputs.joni_root }}" ]; then
+            ARGS="$ARGS --joni-root ${{ inputs.joni_root }}"
+          else
+            ARGS="$ARGS --inbox out/research_inbox.json"
+          fi
+          python -m doktores $ARGS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: research-output
+          path: out/research_inbox.json
+          if-no-files-found: ignore

@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "doktores"
+version = "0.1.0"
+description = "Doktores - an internal research organisation between Joni (memory/governance) and Kevin (idea production): seven roles turn Layer-9 conflicts + candidates into worked research_output."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Hanns-Steffen Rentschler" }]
+keywords = ["research", "falsification", "epistemic-governance", "Layer-9", "Joni", "Kevin"]
+dependencies = []
+
+[project.optional-dependencies]
+llm = ["openai>=1.0"]
+# Kevin is the hypothesis source (optional - Doktores degrades to conflict-only seeding).
+kevin = ["kevin @ git+https://github.com/hstre/Kevin"]
+# Joni is the memory/governance host; only needed for the best-effort *live* Layer-9 read
+# (the preferred path is a decoupled handoff file, which needs no Joni import).
+joni = ["joni @ git+https://github.com/hstre/Joni"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[project.scripts]
+doktores = "doktores.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

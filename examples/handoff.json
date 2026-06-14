@@ -1,0 +1,17 @@
+[
+  {
+    "conflict": "Routing prefers locality (keep related work physically close) but memory prefers recency (recently touched items are most relevant) - under drift the two recommend opposite placements.",
+    "source_hypothesis_ids": ["C-12", "C-37"],
+    "topic": "routing",
+    "candidates": [
+      "recency is a proxy for relevance, not its cause; under drift the proxy detaches from locality",
+      "locality and recency optimise different costs (retrieval latency vs. staleness) and only conflict when drift is fast"
+    ],
+    "context": "Surfaced as an open Layer-9 conflict between two active claims about placement policy."
+  },
+  {
+    "conflict": "Privacy requires forgetting raw inputs, but provenance requires keeping enough of them to audit a claim's origin.",
+    "source_hypothesis_ids": ["C-04"],
+    "topic": "privacy"
+  }
+]
