@@ -54,6 +54,30 @@ CI (`.github/workflows/ci.yml`) runs ruff + pytest on every branch. Match both b
   live Layer-9 read as fallback) and appends packages to Joni's `state/research_inbox.json`.
 - `cli.py` / `__main__.py` — `python -m doktores …`.
 
+## Paper modes (`paper.py` improver / `extend.py` extender)
+
+A second job beside the research circle: take an existing manuscript and either improve it
+(`--improve-paper`) or, more interestingly, **find the questions it does not ask**
+(`--extend`). The extender points the embedded Kevin's blind-spot predictor at the paper,
+then applies one *distinct unusual method* per question from the library (`UNUSUAL_METHODS`),
+and the Doktoren triage each result to `present | borderline | discard` (a rule over a
+holistic LLM read — keep the verdict a rule). Prefer **one strong LLM** here over an
+ensemble; Kevin contributes only the deterministic predictor + method library.
+
+**Acceptance criterion (the one that matters — do not regress to question count):** judge the
+extender by its *yield of author-surprising-but-true findings* — how often a `present`
+question hits something the author (or a strong model reading the paper cold) would not
+readily have seen, yet is real. Volume of `present` questions is **not** the metric. This is
+the only place the scaffold beats the naked model: where a *forced* Denkbewegung (e.g.
+`premortem` → "assume this already failed; what was the cause?") surfaces a gap that neither
+the model nor the author would name unprompted. Validated in practice: `premortem` recovered
+a deliberately-omitted temporal-validity gap in the DES paper (handled one layer up in
+Alexandria-Protokoll v2.2, §XI.4) that was not derivable from the paper's text. The methods
+that earn their place force a move you would not otherwise make (`premortem`,
+`dimensional_consistency`, `invert_then_flip`); the ones whose output a strong model would
+produce anyway, or that are decorative, are correctly the ones the triage mostly discards
+(`structural_analogy_transport`, `conservation_tracking`, `abstraction_ladder`).
+
 ## Conventions
 
 - Ruff: `select = ["E","F","I","UP","B","SIM"]`, line length 100. src-layout, `pyproject.toml`.

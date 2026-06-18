@@ -11,6 +11,15 @@ faithfulness conflict: every question/approach is a labelled *proposal*, never a
 that the paper is wrong. Kevin finds the directions; scoring stays in rules; the LLM only
 phrases. Diversity is enforced by axis, so the questions span different dimensions rather
 than collapsing onto one.
+
+Acceptance criterion (what this mode is FOR): the yield of *author-surprising-but-true*
+findings - questions that hit a real gap the author, or a strong model reading the paper
+cold, would not readily name. NOT the count of ``present`` questions. The scaffold only
+earns its keep where a *forced* Denkbewegung (e.g. premortem: "assume this already failed -
+why?") surfaces something the naked model would not. The methods that pay off force a move
+you would not otherwise make (premortem, dimensional_consistency, invert_then_flip); the
+decorative ones (structural_analogy_transport, conservation_tracking, abstraction_ladder)
+are correctly the ones the triage mostly discards.
 """
 
 from __future__ import annotations
