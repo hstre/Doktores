@@ -34,14 +34,14 @@ def test_extension_surfaces_multiple_questions():
     assert len(pkg["questions"]) >= 2
 
 
-def test_questions_apply_named_methods_incl_unusual():
-    # Kevin's thesis: a blind spot + an UNUSUAL method drives each question.
+def test_questions_apply_diverse_unusual_methods():
+    # Kevin's thesis + the diversity fix: each question is a blind spot x a DIFFERENT
+    # unusual method, drawn from the library (not one move repeated).
     from doktores.extend import UNUSUAL_METHODS
     pkg = extend_paper(rg_paper_draft(), max_questions=4).to_dict()
     methods = [q["method"] for q in pkg["questions"]]
-    assert all(isinstance(q["method"], str) for q in pkg["questions"])
-    assert any(methods), "at least one question must carry a named method"
-    assert any(m in UNUSUAL_METHODS for m in methods), methods
+    assert all(m in UNUSUAL_METHODS for m in methods), methods
+    assert len(set(methods)) >= 3, f"methods should be diverse, got {methods}"
 
 
 def test_every_question_gets_a_triage_verdict():
