@@ -345,9 +345,18 @@ class PaperImprover:
             f"{w.section.heading} || angle: {w.angle or 'tighten and ground the argument'}",
         )
         # The final rewrite is the deliverable -> the (optionally bigger) rewrite model.
+        # It is driven by the section's *weaknesses*, NOT by Kevin's creative angle: the
+        # angle is for ideation (it stays in `suggestion`), but forcing it into the prose
+        # produced strained analogies. Here the brief is faithful clarity/rigour.
+        weak_str = "; ".join(w.weaknesses) or "tighten the argument; state conditions explicitly"
         rewrite = self._rewrite_llm.phrase(
             "paper_rewrite",
-            f"{w.section.heading}: {w.section.text} || angle: {w.angle}",
+            f"HEADING: {w.section.heading}\nORIGINAL: {w.section.text}\n"
+            f"FIX THESE WEAKNESSES: {weak_str}\n"
+            "Rewrite the passage in the paper's own academic register - clearer and more "
+            "rigorous - addressing those weaknesses and stating the condition under which the "
+            "claim could fail. No analogies or metaphors. Stay faithful to the load-bearing "
+            "claims and add no new claims.",
         )
 
         # Reviewer (rules only): how strongly should the author act on this section?
