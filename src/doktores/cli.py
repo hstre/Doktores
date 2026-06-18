@@ -46,6 +46,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--inbox", metavar="PATH", help="append the packages to this inbox JSON file")
     p.add_argument("--joni-root", metavar="PATH",
                    help="append to <root>/state/research_inbox.json (Joni's drop directory)")
+    # Paper-improver mode (parallel to research mode): improve a manuscript instead.
+    p.add_argument("--improve-paper", metavar="PATH",
+                   help="paper-improver mode: read a paper JSON "
+                        "{title,topic,abstract,claims,sections:[{heading,text}]} and improve it")
+    p.add_argument("--demo-paper", action="store_true",
+                   help="paper-improver mode on the bundled Reality Gap paper fixture")
+    p.add_argument("--personas", type=int, default=2,
+                   help="paper mode: number of wild-brother personas in the embedded Kevin")
     return p
 
 
@@ -67,8 +75,47 @@ def _tasks(args) -> list[ResearchTask]:
     return []
 
 
+def _load_paper(path: str):
+    """Load a PaperDraft from a JSON file."""
+    from .paper import PaperDraft, Section
+
+    with open(path, encoding="utf-8") as fh:
+        d = json.load(fh)
+    return PaperDraft(
+        title=d["title"],
+        topic=d.get("topic", "general"),
+        abstract=d.get("abstract", ""),
+        claims=tuple(d.get("claims", ())),
+        sections=tuple(Section(s["heading"], s["text"]) for s in d.get("sections", ())),
+    )
+
+
+def _run_paper_mode(args) -> int:
+    from .paper import improve_paper
+
+    if args.demo_paper:
+        from .examples import rg_paper_draft
+        draft = rg_paper_draft()
+    else:
+        draft = _load_paper(args.improve_paper)
+
+    pkg = improve_paper(draft, personas=args.personas).to_dict()
+    print(json.dumps(pkg, ensure_ascii=False, indent=2))
+    print(
+        f"  - {pkg['id']}: {pkg['reviewer_verdict']} (conf {pkg['confidence']}) "
+        f"-> {len(pkg['section_improvements'])} section(s) reviewed",
+        flush=True,
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+
+    # Paper-improver mode short-circuits the research circle.
+    if args.demo_paper or args.improve_paper:
+        return _run_paper_mode(args)
+
     tasks = _tasks(args)
     if not tasks:
         print("nothing to research: pass a conflict, --from-handoff, or --layer9-root",

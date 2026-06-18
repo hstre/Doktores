@@ -41,10 +41,26 @@ from .models import (
     validate_research_output,
 )
 from .orchestrator import Doktores, research
+from .paper import (
+    PaperDraft,
+    PaperImprovement,
+    PaperImprover,
+    Section,
+    SectionImprovement,
+    improve_paper,
+    validate_paper_improvement,
+)
 
 __all__ = [
     "Doktores",
     "research",
+    "improve_paper",
+    "PaperImprover",
+    "PaperDraft",
+    "Section",
+    "PaperImprovement",
+    "SectionImprovement",
+    "validate_paper_improvement",
     "ResearchTask",
     "ResearchOutput",
     "Theory",
