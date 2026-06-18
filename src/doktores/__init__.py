@@ -22,6 +22,13 @@ Public surface::
 
 from __future__ import annotations
 
+from .extend import (
+    OpenQuestion,
+    PaperExtender,
+    PaperExtension,
+    extend_paper,
+    validate_paper_extension,
+)
 from .llm_client import LLMClient, MockLLM, OpenAICompatibleLLM, get_default_client
 from .models import (
     ClaimUpdate,
@@ -56,6 +63,11 @@ __all__ = [
     "research",
     "improve_paper",
     "PaperImprover",
+    "extend_paper",
+    "PaperExtender",
+    "PaperExtension",
+    "OpenQuestion",
+    "validate_paper_extension",
     "PaperDraft",
     "Section",
     "PaperImprovement",
