@@ -272,16 +272,18 @@ _STOP = {
 def _extension_phrase(kind: str, ctx: str, seed: int) -> str:
     """Deterministic phrasing for the paper-extension kinds (offline MockLLM)."""
     term = (_salient_terms(ctx) or ("the central mechanism",))[0]
-    axis = "an unexamined dimension"
-    for marker in ("LENS", "DIMENSION"):
-        if marker in ctx:
-            tail = ctx.split(marker, 1)[1]
-            axis = tail.split(":", 1)[-1].splitlines()[0].strip() or axis
-            break
+
+    def _field(label: str, default: str) -> str:
+        if label in ctx:
+            return ctx.split(label, 1)[1].split(":", 1)[-1].splitlines()[0].strip() or default
+        return default
+
+    axis = _field("BLIND SPOT", _field("LENS", _field("DIMENSION", "an unexamined dimension")))
+    method = _field("UNUSUAL METHOD to apply to that blind spot", "an unusual method")
     if kind == "open_question":
         return (
-            f"Under what conditions does {term} still hold once the {axis} dimension is "
-            "varied - the regime the paper does not probe?"
+            f"Applying {method} to the '{axis}' blind spot of this paper: what changes about "
+            f"{term} if the paper's premise there is inverted or pushed to its limit?"
         )
     if kind == "why_unasked":
         return (

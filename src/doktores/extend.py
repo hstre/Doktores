@@ -26,9 +26,10 @@ from .paper import PaperDraft, _terms
 
 @dataclass
 class OpenQuestion:
-    """One question the paper does not ask, worked into a sketched research direction."""
+    """One question the paper does not ask: an unusual METHOD applied to a blind spot."""
 
-    axis: str                 # the blind-spot dimension it comes from
+    axis: str                 # the blind-spot dimension Kevin routed to
+    method: str               # the unusual content-free method applied to that blind spot
     question: str
     why_open: str             # why the paper leaves it open
     approach: str             # a sketch of how to answer it
@@ -39,6 +40,7 @@ class OpenQuestion:
     def to_dict(self) -> dict:
         return {
             "axis": self.axis,
+            "method": self.method,
             "question": self.question,
             "why_open": self.why_open,
             "approach": self.approach,
@@ -74,7 +76,17 @@ class PaperExtension:
 
 
 PAPER_EXTENSION_KEYS = ("id", "paper_id", "title", "topic", "questions", "summary")
-_Q_KEYS = ("axis", "question", "why_open", "approach", "test", "builds_toward", "novelty")
+_Q_KEYS = ("axis", "method", "question", "why_open", "approach", "test", "builds_toward",
+           "novelty")
+
+# The bold, content-free Denkbewegungen worth applying to a blind spot - the ones that
+# reframe rather than merely re-check. We prefer these over the diligent-reviewer methods
+# (five_whys, base_rate_first, ...) so the questions lean unusual, not safe.
+UNUSUAL_METHODS = frozenset({
+    "invert_then_flip", "limit_case_analysis", "constraint_relaxation",
+    "structural_analogy_transport", "conservation_tracking", "dimensional_consistency",
+    "first_principles_reduction", "emergence_search", "abstraction_ladder", "premortem",
+})
 
 
 def validate_paper_extension(pkg: dict) -> list[str]:
@@ -137,20 +149,31 @@ class PaperExtender:
         )
         axis_of = {s.id: s.axis for s in run.spaces}
         cand_by_id = {c.id: c for c in run.candidates}
+        transfer_by_id = {t.id: t for t in run.transfers}
         promising = run.promising()
 
         def primary(axis: str) -> str:
             comps = [c for c in axis.split("+") if c]
             return comps[0] if comps else "open"
 
-        # Spread across *primary* dimensions (deprioritising 'analogy', which over-appears
-        # and yields metaphor questions), then fill remaining slots so we surface up to
-        # max_questions distinct candidates. Paper-specificity comes from the content fed
-        # into _work, so even a repeated primary yields a different question.
-        picks: list = []                 # list of (cand, axis, score)
+        def method_of(cand) -> str:
+            return getattr(cand, "method_name", "") or ""
+
+        def steps_of(cand) -> tuple[str, ...]:
+            t = transfer_by_id.get(getattr(cand, "transfer_id", None))
+            return tuple(t.mapped_steps) if t else ()
+
+        # Kevin's two-stage thesis: find the blind spot, then apply an UNUSUAL method to it.
+        # So we prefer method-disciplined candidates whose method is one of the bold ones,
+        # and spread across both the blind-spot dimension AND the method (no repeats), so
+        # each question is a different (blind spot x unusual method) pairing. Later stages
+        # relax: any disciplined candidate, then anything, to fill up to max_questions.
+        picks: list = []                 # (cand, axis, method, steps, score)
         picked_ids: set[str] = set()
-        used: set[str] = set()
-        for stage in ("distinct-nonanalogy", "distinct-any", "fill"):
+        used_prim: set[str] = set()
+        used_method: set[str] = set()
+        stages = ("unusual-distinct", "unusual", "disciplined", "fill")
+        for stage in stages:
             for ev in promising:
                 if len(picks) >= self._max:
                     break
@@ -159,19 +182,28 @@ class PaperExtender:
                 cand = cand_by_id.get(ev.candidate_id)
                 if cand is None:
                     continue
+                method = method_of(cand)
                 axis = axis_of.get(cand.space_id, "open")
                 prim = primary(axis)
-                if stage == "distinct-nonanalogy" and ("analogy" in axis or prim in used):
+                disciplined = bool(getattr(cand, "transfer_id", None))
+                unusual = method in UNUSUAL_METHODS
+                if stage == "unusual-distinct" and not (
+                    unusual and prim not in used_prim and method not in used_method
+                ):
                     continue
-                if stage == "distinct-any" and prim in used:
+                if stage == "unusual" and not (unusual and method not in used_method):
+                    continue
+                if stage == "disciplined" and not disciplined:
                     continue
                 picked_ids.add(ev.candidate_id)
-                used.add(prim)
-                picks.append((cand, axis, ev.score))
+                used_prim.add(prim)
+                if method:
+                    used_method.add(method)
+                picks.append((cand, axis, method, steps_of(cand), ev.score))
             if len(picks) >= self._max:
                 break
 
-        questions = pmap(lambda p: self._work(draft, p[0], p[1], p[2]), picks)
+        questions = pmap(lambda p: self._work(draft, *p), picks)
         summary = self._llm.phrase(
             "extension_summary",
             f"{draft.title} ({draft.topic}); {len(questions)} unasked questions across "
@@ -182,27 +214,38 @@ class PaperExtender:
             questions=questions, summary=summary,
         )
 
-    def _work(self, draft: PaperDraft, cand, axis: str, score: float) -> OpenQuestion:
-        # Ground the question in the paper's ACTUAL content (not just abstract + a generic
-        # axis label) so different papers get genuinely paper-specific questions. The axis
-        # and the routed direction are only soft hints to push past the obvious.
+    def _work(
+        self, draft: PaperDraft, cand, axis: str, method: str,
+        steps: tuple[str, ...], score: float,
+    ) -> OpenQuestion:
+        # Kevin's move, made real: take the blind spot (axis) and APPLY the unusual method
+        # to it, grounded in the paper's actual content. The method's executed steps are the
+        # creative engine; the LLM only phrases the question that results.
         content = " ".join(f"[{s.heading}] {s.text}" for s in draft.sections)[:2600]
-        hint = getattr(cand, "content", "")[:200]
+        method_label = method.replace("_", " ") if method else "an unusual reframing method"
+        executed = " ; ".join(steps[:3])
         ctx = (
             f"PAPER: {draft.title}\nFIELD: {draft.topic}\nABSTRACT: {draft.abstract}\n"
-            f"CONTENT: {content}\nLENS (soft hint): {axis}"
+            f"CONTENT: {content}"
         )
         question = self._llm.phrase(
             "open_question",
-            ctx + f"\nROUTING HINT: {hint}\n"
-            "From THIS paper's specific content, pose ONE important research question the "
-            "paper does NOT address but that builds directly on its results. Reference the "
-            "paper's own constructs. Concrete and testable; no metaphors, no analogies, no "
-            "anthropomorphic framing.",
+            ctx
+            + f"\nBLIND SPOT (a dimension the paper does not work): {axis}"
+            + f"\nUNUSUAL METHOD to apply to that blind spot: {method_label}"
+            + (f"\nMETHOD STEPS executed against the paper: {executed}" if executed else "")
+            + "\nApply this method to that blind spot of THIS paper and phrase the ONE bold, "
+            "non-obvious research question it produces - one the paper does not ask. Lean into "
+            "the reframing the method suggests (invert the premise, push to the limit, drop the "
+            "binding constraint, transport the structure from another field) rather than a "
+            "routine robustness/generalisation check. Reference the paper's own constructs. An "
+            "illuminating cross-domain analogy is welcome if it sharpens the question; no "
+            "decorative metaphor, no anthropomorphic framing. Make it concrete and testable.",
         )
         qctx = f"PAPER: {draft.title}\nFIELD: {draft.topic}\nQUESTION: {question}"
         return OpenQuestion(
             axis=axis,
+            method=method,
             question=question,
             why_open=self._llm.phrase("why_unasked", ctx + f"\nQUESTION: {question}"),
             approach=self._llm.phrase(
