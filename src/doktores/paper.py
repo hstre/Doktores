@@ -410,7 +410,9 @@ def default_rewrite_llm() -> LLMClient | None:
     key = os.getenv("OPENROUTER_API_KEY")
     if not model or not key:
         return None
-    from .kevin.llm_client import OpenAICompatibleLLM
+    # The rewrite goes through the *Doktores* phrasing surface (phrase/phrase_list), not
+    # Kevin's (write_variant/critique) - so build the Doktores client, not the Kevin one.
+    from .llm_client import OpenAICompatibleLLM
     return OpenAICompatibleLLM(
         model=model, base_url="https://openrouter.ai/api/v1", api_key=key
     )
