@@ -68,7 +68,7 @@ class LLMClient(Protocol):
 
     def triage_question(self, question: str, context: str) -> dict:
         """Read a candidate research question into structured booleans for triage:
-        ``grounded`` / ``testable`` / ``coherent`` / ``nontrivial`` / ``overreaching``.
+        ``grounded`` / ``testable`` / ``coherent`` / ``nontrivial`` / ``gimmick``.
         Language work only - the LLM *reads*; the verdict is decided by rules elsewhere."""
 
 
@@ -249,7 +249,7 @@ class MockLLM:
             "coherent": "?" in question and len(question) > 30,
             "nontrivial": len(question) > 90,
             # decorative far-domain reaches are the 'Quatsch' signature
-            "overreaching": any(w in q for w in (
+            "gimmick": any(w in q for w in (
                 "just as", "like a", "mirror", "luddite", "roman", "asteroid", "aqueduct",
             )),
         }
@@ -302,7 +302,7 @@ def _extension_phrase(kind: str, ctx: str, seed: int) -> str:
         return default
 
     axis = _field("BLIND SPOT", _field("LENS", _field("DIMENSION", "an unexamined dimension")))
-    method = _field("UNUSUAL METHOD to apply to that blind spot", "an unusual method")
+    method = _field("UNUSUAL METHOD to apply", "an unusual method")
     if kind == "open_question":
         return (
             f"Applying {method} to the '{axis}' blind spot of this paper: what changes about "
@@ -452,14 +452,15 @@ class OpenAICompatibleLLM:
             "examiners, or is nonsense/overreach. You do NOT decide a verdict; you only report "
             'booleans. Reply as JSON with keys: grounded (tied to the paper\'s actual content), '
             "testable (has a concrete empirical test), coherent (well-posed, not word-salad), "
-            "nontrivial (not a trivial restatement), overreaching (relies on a far-fetched or "
-            "decorative leap). All booleans."
+            "nontrivial (not a trivial restatement), gimmick (merely dresses a far-fetched or "
+            "decorative cross-domain leap with no real grounding in the paper - as opposed to "
+            "an illuminating structural analogy). All booleans."
         )
         user = f"Paper context: {context[:1500]}\nQuestion: {question}"
         data = self._parse_json(self._chat(system, user, temperature=0.0, json=True))
         return {
             k: bool(data.get(k))
-            for k in ("grounded", "testable", "coherent", "nontrivial", "overreaching")
+            for k in ("grounded", "testable", "coherent", "nontrivial", "gimmick")
         }
 
 
