@@ -425,14 +425,77 @@ class OpenAICompatibleLLM:
         }
 
 
+class MultiModelLLM:
+    """A multi-*model* persona ensemble - improvement #8, done for real.
+
+    Kevin's multi-persona ensemble is strongest when each persona is a *different language
+    model*. This wraps several clients (typically one OpenRouter key, different ``model``
+    ids) and routes each persona to a different one, so the wild variants genuinely come
+    from different LLMs and the engine harvests their divergence. Everything that is not
+    persona-specific (propose_spaces / execute_step / critique / read_signals /
+    phrase_transfer) runs on the primary (first) client, so routing and selection stay
+    anchored to one reader - only the *variation* is poly-model.
+
+    Construct directly with ready clients (used by tests), or via :meth:`from_models`.
+    """
+
+    def __init__(self, clients: list) -> None:
+        if not clients:
+            raise ValueError("MultiModelLLM needs at least one client")
+        self._clients = list(clients)
+
+    @classmethod
+    def from_models(
+        cls, models: list[str], *, base_url: str | None = None, api_key: str | None = None
+    ) -> MultiModelLLM:
+        return cls([OpenAICompatibleLLM(model=m, base_url=base_url, api_key=api_key)
+                    for m in models])
+
+    @property
+    def model_count(self) -> int:
+        return len(self._clients)
+
+    def _for_persona(self, persona: str):
+        """Deterministic persona -> client mapping (hash, no PRNG)."""
+        if not persona or len(self._clients) == 1:
+            return self._clients[0]
+        idx = int(hashlib.sha256(persona.encode()).hexdigest(), 16) % len(self._clients)
+        return self._clients[idx]
+
+    # -- persona-specific: the one place models diverge -------------------- #
+    def write_variant(self, problem, space, move, *, persona: str = "") -> str:
+        return self._for_persona(persona).write_variant(problem, space, move, persona=persona)
+
+    # -- anchored to the primary client ----------------------------------- #
+    def propose_spaces(self, problem) -> list[dict]:
+        return self._clients[0].propose_spaces(problem)
+
+    def phrase_transfer(self, target_text: str, step: str) -> str:
+        return self._clients[0].phrase_transfer(target_text, step)
+
+    def execute_step(self, problem_statement, target_text, step, variables) -> str:
+        return self._clients[0].execute_step(problem_statement, target_text, step, variables)
+
+    def critique(self, problem, candidate_text: str) -> dict:
+        return self._clients[0].critique(problem, candidate_text)
+
+    def read_signals(self, problem, candidate_text: str) -> dict:
+        return self._clients[0].read_signals(problem, candidate_text)
+
+
 def get_default_client() -> LLMClient:
     """Return the configured client.
 
     Without ``DOKTORES_USE_REAL_LLM=1``, returns the deterministic ``MockLLM`` - so
-    tests, CI and a fresh clone all work with zero setup. With it set, returns the
-    real OpenAI-compatible client (needs the ``llm`` extra and a key). The engines
-    are identical either way; only the language layer moves.
+    tests, CI and a fresh clone all work with zero setup. With it set, returns the real
+    OpenAI-compatible client (needs the ``llm`` extra and a key). If ``DOKTORES_KEVIN_MODELS``
+    is also set (a comma-separated list of model ids, e.g. for OpenRouter), the personas are
+    drawn from *those different models* via :class:`MultiModelLLM`. The engines are identical
+    either way; only the language layer moves.
     """
     if os.getenv("DOKTORES_USE_REAL_LLM") == "1":  # pragma: no cover - needs a key + network
+        models = [m.strip() for m in os.getenv("DOKTORES_KEVIN_MODELS", "").split(",") if m.strip()]
+        if len(models) > 1:
+            return MultiModelLLM.from_models(models)
         return OpenAICompatibleLLM()
     return MockLLM()
