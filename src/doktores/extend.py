@@ -137,19 +137,32 @@ class PaperExtender:
         )
         axis_of = {s.id: s.axis for s in run.spaces}
         cand_by_id = {c.id: c for c in run.candidates}
+        promising = run.promising()
 
-        # One direction per DISTINCT axis -> the questions span dimensions, not one bet.
-        seen: set[str] = set()
-        picks: list[tuple[str, float]] = []  # (axis, score)  - the seed axis + opportunity
-        for ev in run.promising():
-            cand = cand_by_id.get(ev.candidate_id)
-            if cand is None:
-                continue
-            axis = axis_of.get(cand.space_id, "open")
-            if axis in seen:
-                continue
-            seen.add(axis)
-            picks.append((axis, ev.score))
+        def components(axis: str) -> list[str]:
+            return [c for c in axis.split("+") if c]
+
+        # One direction per distinct axis *component* (not just exact string) so the
+        # agenda spans genuinely different dimensions; and 'analogy' is deprioritised - it
+        # over-appears in the routing and tends to produce metaphor questions, so it only
+        # fills a slot if nothing else is left.
+        picks: list[tuple[str, float]] = []   # (axis, score)
+        used: set[str] = set()
+        for allow_analogy in (False, True):
+            for ev in promising:
+                if len(picks) >= self._max:
+                    break
+                cand = cand_by_id.get(ev.candidate_id)
+                if cand is None:
+                    continue
+                axis = axis_of.get(cand.space_id, "open")
+                comps = components(axis)
+                if not allow_analogy and "analogy" in comps:
+                    continue
+                if any(c in used for c in comps):     # component-level de-dup
+                    continue
+                used.update(comps)
+                picks.append((axis, ev.score))
             if len(picks) >= self._max:
                 break
 
@@ -169,14 +182,27 @@ class PaperExtender:
             f"PAPER: {draft.title}\nFIELD: {draft.topic}\nABSTRACT: {draft.abstract}\n"
             f"DIMENSION the paper does not work: {axis}"
         )
-        question = self._llm.phrase("open_question", ctx)
+        question = self._llm.phrase(
+            "open_question",
+            ctx + "\nPose ONE precise, substantive research question along that dimension "
+            "that the paper does not address. Be concrete and testable; no metaphors or "
+            "analogies, no anthropomorphic framing.",
+        )
         qctx = f"PAPER: {draft.title}\nFIELD: {draft.topic}\nQUESTION: {question}"
         return OpenQuestion(
             axis=axis,
             question=question,
             why_open=self._llm.phrase("why_unasked", ctx + f"\nQUESTION: {question}"),
-            approach=self._llm.phrase("answer_approach", qctx),
-            test=self._llm.phrase("answer_test", qctx),
+            approach=self._llm.phrase(
+                "answer_approach",
+                qctx + "\nSketch a concrete method to answer it (data/procedure), 1-2 sentences.",
+            ),
+            test=self._llm.phrase(
+                "answer_test",
+                qctx + "\nGive a concrete validation: the specific experiment or measurement, "
+                "the metric, and the observed result that would FALSIFY the proposed answer. "
+                "1-2 sentences. Do NOT merely restate that the paper omits this.",
+            ),
             builds_toward=self._llm.phrase("builds_toward", qctx),
             novelty=round(score, 4),
         )
