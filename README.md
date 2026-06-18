@@ -141,6 +141,19 @@ from doktores import improve_paper, PaperDraft, Section
 pkg = improve_paper(PaperDraft(title="…", topic="…", sections=(Section("Intro", "…"),))).to_dict()
 ```
 
+**Speed.** The LLM calls inside a run are parallelised (bounded by `DOKTORES_LLM_CONCURRENCY`,
+default 8). For real-LLM use the recommended split is *fast model for the bulk, big model only
+for the final rewrite*: run the ideation/signals on **DeepSeek direct** (`DEEPSEEK_API_KEY`) and
+route only the rewritten passage to a big model via `DOKTORES_REWRITE_MODEL` +
+`OPENROUTER_API_KEY`. `--fast` additionally trims the embedded Kevin's depth (one space/method,
+no hardening round).
+
+```bash
+DEEPSEEK_API_KEY=…  OPENROUTER_API_KEY=…  DOKTORES_USE_REAL_LLM=1 \
+DOKTORES_REWRITE_MODEL=anthropic/claude-opus-4.8 \
+python -m doktores --demo-paper --fast
+```
+
 ## Integration seams
 
 * **Kevin** (`io_kevin.candidates_for`) — calls `Kevin().run(Problem(...))` and keeps the

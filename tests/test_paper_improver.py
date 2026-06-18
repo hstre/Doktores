@@ -61,6 +61,39 @@ def test_runs_are_replay_stable():
     assert a == b
 
 
+class _TagLLM:
+    """Minimal LLMClient stand-in that tags its output so we can see which client ran."""
+
+    def __init__(self, tag: str) -> None:
+        self.tag = tag
+
+    def theorize(self, conflict, candidates):  # pragma: no cover - unused here
+        return {}
+
+    def phrase(self, kind, context):
+        return f"{self.tag}:{kind}"
+
+    def phrase_list(self, kind, context, n):
+        return [f"{self.tag}:{kind}:{i}" for i in range(n)]
+
+
+def test_only_the_final_rewrite_uses_the_rewrite_llm():
+    from doktores import PaperImprover
+
+    imp = PaperImprover(_TagLLM("BULK"), rewrite_llm=_TagLLM("BIG"), personas=1, fast=True)
+    pkg = imp.improve(_draft()).to_dict()
+    s = pkg["section_improvements"][0]
+    assert s["rewrite"].startswith("BIG:paper_rewrite"), "rewrite must come from rewrite_llm"
+    assert s["weaknesses"][0].startswith("BULK:"), "weaknesses stay on the bulk client"
+    assert s["suggestion"].startswith("BULK:"), "suggestion stays on the bulk client"
+
+
+def test_fast_mode_still_produces_a_valid_package():
+    pkg = improve_paper(_draft(), fast=True).to_dict()
+    assert validate_paper_improvement(pkg) == []
+    assert len(pkg["section_improvements"]) == len(_draft().sections)
+
+
 def test_works_on_an_ad_hoc_draft():
     draft = PaperDraft(
         title="A Note on Caching Under Drift",

@@ -211,13 +211,21 @@ class PaperImprover:
         llm: LLMClient | None = None,
         *,
         kevin: Kevin | None = None,
+        rewrite_llm: LLMClient | None = None,
         personas: int = 2,
+        fast: bool = False,
     ) -> None:
+        # ``llm`` does the bulk language work (weaknesses, suggestions, summary) and, by
+        # default, the embedded Kevin too - point it at a FAST model (e.g. DeepSeek direct).
         self._llm = llm or get_default_client()
-        # The embedded Kevin shares no LLM with us by design: its MockLLM is the offline
-        # default, so the whole improver runs deterministically with no network.
+        # ``rewrite_llm`` writes only the final rewritten passage - point it at a BIG model
+        # (e.g. Claude Opus / Gemini via OpenRouter). Falls back to the bulk client.
+        self._rewrite_llm = rewrite_llm or self._llm
         self._kevin = kevin or Kevin()
         self._personas = max(1, personas)
+        # ``fast`` trims the embedded Kevin's depth (one space, one method per target, no
+        # hardening round) so a section costs far fewer dependent LLM waves.
+        self._fast = fast
 
     # -- public ------------------------------------------------------------- #
     def improve(self, draft: PaperDraft) -> PaperImprovement:
@@ -281,7 +289,13 @@ class PaperImprover:
             anchors=w.terms,
             variables=w.terms,
         )
-        run = self._kevin.run(problem, personas=self._personas, harden=True)
+        run = self._kevin.run(
+            problem,
+            personas=self._personas,
+            harden=not self._fast,
+            top_spaces=1 if self._fast else 2,
+            methods_per_target=1 if self._fast else 2,
+        )
         promising = run.promising()
         if not promising:
             w.angle, w.angle_score = "", 0.0
@@ -330,7 +344,8 @@ class PaperImprover:
             "paper_suggestion",
             f"{w.section.heading} || angle: {w.angle or 'tighten and ground the argument'}",
         )
-        rewrite = self._llm.phrase(
+        # The final rewrite is the deliverable -> the (optionally bigger) rewrite model.
+        rewrite = self._rewrite_llm.phrase(
             "paper_rewrite",
             f"{w.section.heading}: {w.section.text} || angle: {w.angle}",
         )
@@ -378,11 +393,46 @@ class PaperImprover:
         return Verdict.REJECT
 
 
+def default_rewrite_llm() -> LLMClient | None:
+    """Build the big-model rewrite client from the environment, or None.
+
+    The recommended split: the bulk runs on a fast model (DeepSeek direct via
+    ``DEEPSEEK_API_KEY``), while only the final rewrite uses a big model. Set
+    ``DOKTORES_REWRITE_MODEL`` (e.g. ``anthropic/claude-opus-4.8``) plus
+    ``OPENROUTER_API_KEY`` to route the rewrite there. Returns None (fall back to the
+    bulk client) when not configured, or when real LLMs are off.
+    """
+    import os
+
+    if os.getenv("DOKTORES_USE_REAL_LLM") != "1":
+        return None
+    model = os.getenv("DOKTORES_REWRITE_MODEL")
+    key = os.getenv("OPENROUTER_API_KEY")
+    if not model or not key:
+        return None
+    from .kevin.llm_client import OpenAICompatibleLLM
+    return OpenAICompatibleLLM(
+        model=model, base_url="https://openrouter.ai/api/v1", api_key=key
+    )
+
+
 def improve_paper(
     draft: PaperDraft,
     *,
     llm: LLMClient | None = None,
+    rewrite_llm: LLMClient | None = None,
     personas: int = 2,
+    fast: bool = False,
 ) -> PaperImprovement:
-    """Convenience: run the paper-improver circle once and return the package."""
-    return PaperImprover(llm, personas=personas).improve(draft)
+    """Convenience: run the paper-improver circle once and return the package.
+
+    By default the final rewrite is auto-routed to a big model if ``DOKTORES_REWRITE_MODEL``
+    + ``OPENROUTER_API_KEY`` are set (see :func:`default_rewrite_llm`); pass ``rewrite_llm``
+    to override. ``fast=True`` trims the embedded Kevin's depth for speed.
+    """
+    return PaperImprover(
+        llm,
+        rewrite_llm=rewrite_llm or default_rewrite_llm(),
+        personas=personas,
+        fast=fast,
+    ).improve(draft)

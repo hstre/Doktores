@@ -54,6 +54,12 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="paper-improver mode on the bundled Reality Gap paper fixture")
     p.add_argument("--personas", type=int, default=2,
                    help="paper mode: number of wild-brother personas in the embedded Kevin")
+    p.add_argument("--fast", action="store_true",
+                   help="paper mode: trim the embedded Kevin's depth (one space/method, no "
+                        "hardening) for speed")
+    p.add_argument("--rewrite-model", metavar="MODEL",
+                   help="paper mode: route only the final rewrite to this big OpenRouter model "
+                        "(e.g. anthropic/claude-opus-4.8); needs OPENROUTER_API_KEY")
     return p
 
 
@@ -91,7 +97,7 @@ def _load_paper(path: str):
 
 
 def _run_paper_mode(args) -> int:
-    from .paper import improve_paper
+    from .paper import default_rewrite_llm, improve_paper
 
     if args.demo_paper:
         from .examples import rg_paper_draft
@@ -99,7 +105,19 @@ def _run_paper_mode(args) -> int:
     else:
         draft = _load_paper(args.improve_paper)
 
-    pkg = improve_paper(draft, personas=args.personas).to_dict()
+    rewrite_llm = None
+    if args.rewrite_model:
+        import os
+
+        from .kevin.llm_client import OpenAICompatibleLLM
+        rewrite_llm = OpenAICompatibleLLM(
+            model=args.rewrite_model, base_url="https://openrouter.ai/api/v1",
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+        )
+    pkg = improve_paper(
+        draft, personas=args.personas, fast=args.fast,
+        rewrite_llm=rewrite_llm or default_rewrite_llm(),
+    ).to_dict()
     print(json.dumps(pkg, ensure_ascii=False, indent=2))
     print(
         f"  - {pkg['id']}: {pkg['reviewer_verdict']} (conf {pkg['confidence']}) "
