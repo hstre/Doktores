@@ -182,6 +182,11 @@ class MockLLM:
                 "Across the manuscript the strongest leverage is sharper framing and explicit "
                 f"failure conditions: {_first_clause(ctx)}."
             )
+        if kind in (
+            "open_question", "why_unasked", "answer_approach", "answer_test",
+            "builds_toward", "extension_summary",
+        ):
+            return _extension_phrase(kind, ctx, seed)
         return _first_clause(ctx)
 
     def phrase_list(self, kind: str, context: str, n: int) -> list[str]:
@@ -262,6 +267,43 @@ _STOP = {
     "where", "while", "being", "under", "after", "before", "between", "because", "claim",
     "conflict", "theory", "system", "value", "values",
 }
+
+
+def _extension_phrase(kind: str, ctx: str, seed: int) -> str:
+    """Deterministic phrasing for the paper-extension kinds (offline MockLLM)."""
+    term = (_salient_terms(ctx) or ("the central mechanism",))[0]
+    axis = "an unexamined dimension"
+    for marker in ("LENS", "DIMENSION"):
+        if marker in ctx:
+            tail = ctx.split(marker, 1)[1]
+            axis = tail.split(":", 1)[-1].splitlines()[0].strip() or axis
+            break
+    if kind == "open_question":
+        return (
+            f"Under what conditions does {term} still hold once the {axis} dimension is "
+            "varied - the regime the paper does not probe?"
+        )
+    if kind == "why_unasked":
+        return (
+            f"The paper fixes {term} and never varies it along {axis}, so the question falls "
+            "outside its stated scope."
+        )
+    if kind == "answer_approach":
+        return (
+            f"Vary {term} systematically while holding the paper's setup fixed, and read off "
+            "the effect from the cheapest discriminating case first."
+        )
+    if kind == "answer_test":
+        return (
+            f"The answer is falsified if {term} shows no measurable change across the varied "
+            "regime, or if a simpler account predicts the same result."
+        )
+    if kind == "builds_toward":
+        return (
+            f"A validated answer would extend the paper from a single result toward a rule "
+            f"over the {axis} dimension."
+        )
+    return f"The paper's main openings lie along dimensions it does not work: {_first_clause(ctx)}."
 
 
 # --------------------------------------------------------------------------- #
