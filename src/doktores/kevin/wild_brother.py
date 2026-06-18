@@ -23,6 +23,7 @@ across personas. The persona label is fed to the LLM so each persona's hash seed
 
 from __future__ import annotations
 
+from ._parallel import pmap
 from .llm_client import LLMClient
 from .models import Problem, SolutionSpace, Variant, WildMove
 
@@ -92,23 +93,28 @@ class WildBrother:
         differs most across personas (dropping personas that merely echo another).
         """
         chosen = PERSONAS[: max(1, min(personas, len(PERSONAS)))]
+        # Flat, deterministic task list across (space, move, persona); the LLM calls
+        # run concurrently (I/O-bound) but results stay in input order, so the run is
+        # replay-stable.
+        tasks = [(space, move, p) for space in spaces for move in moves for p in chosen]
+        contents = pmap(
+            lambda t: self._llm.write_variant(problem, t[0], t[1], persona=t[2]), tasks
+        )
+        built: dict[tuple[str, WildMove, str], Variant] = {
+            (space.id, move, p): Variant(
+                space_id=space.id, move=move, content=content,
+                wildness=WILDNESS[move], persona=p,
+            )
+            for (space, move, p), content in zip(tasks, contents, strict=True)
+        }
         out: list[Variant] = []
         for space in spaces:
-            if len(chosen) == 1:
-                out.extend(self.vary(problem, space, moves=moves, persona=chosen[0]))
-                continue
             for move in moves:
-                slot = [
-                    Variant(
-                        space_id=space.id,
-                        move=move,
-                        content=self._llm.write_variant(problem, space, move, persona=p),
-                        wildness=WILDNESS[move],
-                        persona=p,
-                    )
-                    for p in chosen
-                ]
-                out.extend(self._harvest_divergence(slot))
+                slot = [built[(space.id, move, p)] for p in chosen]
+                if len(chosen) == 1:
+                    out.append(slot[0])
+                else:
+                    out.extend(self._harvest_divergence(slot))
         return out
 
     @staticmethod

@@ -21,6 +21,7 @@ The thesis, in code:
 
 from __future__ import annotations
 
+from ._parallel import pmap
 from .llm_client import LLMClient, get_default_client
 from .method_library import MethodLibrary
 from .models import Candidate, CreativeRun, Problem, Variant
@@ -89,13 +90,7 @@ class Kevin:
 
         # 4-5. build candidates: raw for tame variants, method-disciplined for wild ones.
         space_by_id = {s.id: s for s in run.spaces}
-        for variant in run.variants:
-            if variant.wildness >= discipline_threshold:
-                run.candidates.extend(
-                    self._discipline(run, variant, space_by_id, methods_per_target)
-                )
-            else:
-                run.candidates.append(self._raw_candidate(variant))
+        self._build_candidates(run, space_by_id, methods_per_target, discipline_threshold)
 
         run.evaluations = self._selector.select(problem, run.candidates)
         run.pareto_ids = [e.candidate_id for e in run.evaluations if e.pareto]
@@ -115,36 +110,58 @@ class Kevin:
             wildness=variant.wildness,
         )
 
-    def _discipline(
-        self, run: CreativeRun, variant: Variant, space_by_id: dict, methods_per_target: int
-    ) -> list[Candidate]:
-        """Transfer matching Layer-9 methods onto a wild variant -> disciplined candidates."""
-        space = space_by_id.get(variant.space_id)
-        affinities = space.affinities if space else ()
-        methods = self._library.match(
-            affinities, top_k=methods_per_target, prefer_domain=run.problem.domain
-        )
-        if not methods:
-            return [self._raw_candidate(variant)]
+    def _build_candidates(
+        self, run: CreativeRun, space_by_id: dict, methods_per_target: int,
+        discipline_threshold: float,
+    ) -> None:
+        """Turn variants into candidates; the method transfers run concurrently.
 
-        candidates: list[Candidate] = []
-        for method in methods:
-            transfer = self._library.transfer(
-                self._llm,
-                method,
-                variant.id,
-                variant.content,
-                problem_statement=run.problem.statement,
-                variables=run.problem.variables,
+        Tame variants (and wild ones with no matching method) become a single raw
+        candidate; wild variants are disciplined by one candidate per transferred
+        method. The (variant, method) work is built as a deterministic, flat task list
+        so the parallel transfers reassemble in the exact serial order - the run stays
+        replay-stable.
+        """
+        # 1. matching is pure logic -> do it serially, in variant order.
+        specs: list[tuple[Variant, object]] = []  # (variant, Method | None)
+        for variant in run.variants:
+            if variant.wildness < discipline_threshold:
+                specs.append((variant, None))
+                continue
+            space = space_by_id.get(variant.space_id)
+            methods = self._library.match(
+                space.affinities if space else (),
+                top_k=methods_per_target, prefer_domain=run.problem.domain,
             )
+            if not methods:
+                specs.append((variant, None))
+            else:
+                specs.extend((variant, m) for m in methods)
+
+        # 2. the transfers are the only network step here -> run them concurrently.
+        def _do(spec):
+            variant, method = spec
+            if method is None:
+                return None
+            return self._library.transfer(
+                self._llm, method, variant.id, variant.content,
+                problem_statement=run.problem.statement, variables=run.problem.variables,
+            )
+
+        transfers = pmap(_do, specs)
+
+        # 3. assemble in deterministic input order.
+        for (variant, method), transfer in zip(specs, transfers, strict=True):
+            if method is None:
+                run.candidates.append(self._raw_candidate(variant))
+                continue
             run.transfers.append(transfer)
-            disciplined_text = (
-                f"{variant.content}  |  via '{method.name}': "
-                + "; ".join(transfer.mapped_steps)
-            )
-            candidates.append(
+            run.candidates.append(
                 Candidate(
-                    content=disciplined_text,
+                    content=(
+                        f"{variant.content}  |  via '{method.name}': "
+                        + "; ".join(transfer.mapped_steps)
+                    ),
                     space_id=variant.space_id,
                     variant_id=variant.id,
                     transfer_id=transfer.id,
@@ -152,7 +169,6 @@ class Kevin:
                     method_name=method.name,
                 )
             )
-        return candidates
 
     def _harden(self, run: CreativeRun, problem: Problem, max_harden: int) -> None:
         """Falsification loop: attack the top candidates and add one revised version each.
@@ -166,10 +182,13 @@ class Kevin:
         top = [
             e for e in run.evaluations if e.candidate_id in by_id
         ][:max_harden]
+        # The critiques are independent network calls -> run them concurrently, in order.
+        critiques = pmap(
+            lambda ev: self._llm.critique(problem, by_id[ev.candidate_id].content), top
+        )
         new_candidates: list[Candidate] = []
-        for ev in top:
+        for ev, critique in zip(top, critiques, strict=True):
             base = by_id[ev.candidate_id]
-            critique = self._llm.critique(problem, base.content)
             weakness = critique.get("weakness", "")
             fix = critique.get("suggested_fix", "")
             hardened = Candidate(
