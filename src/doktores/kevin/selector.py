@@ -23,6 +23,7 @@ Improvements:
 
 from __future__ import annotations
 
+from ._parallel import pmap
 from .llm_client import LLMClient
 from .models import Candidate, Evaluation, Problem, Verdict
 
@@ -171,7 +172,9 @@ class Selector:
 
         Marks the (novelty, testability) Pareto-optimal candidates (improvement 4b).
         """
-        evals = [self.evaluate(problem, c) for c in candidates]
+        # read_signals (the only network step) runs concurrently across candidates;
+        # order preserved, so the Pareto/sort stays replay-stable.
+        evals = pmap(lambda c: self.evaluate(problem, c), candidates)
         front = _pareto_front(evals)
         for e in evals:
             e.pareto = e.candidate_id in front
