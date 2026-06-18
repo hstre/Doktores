@@ -139,34 +139,39 @@ class PaperExtender:
         cand_by_id = {c.id: c for c in run.candidates}
         promising = run.promising()
 
-        def components(axis: str) -> list[str]:
-            return [c for c in axis.split("+") if c]
+        def primary(axis: str) -> str:
+            comps = [c for c in axis.split("+") if c]
+            return comps[0] if comps else "open"
 
-        # One direction per distinct axis *component* (not just exact string) so the
-        # agenda spans genuinely different dimensions; and 'analogy' is deprioritised - it
-        # over-appears in the routing and tends to produce metaphor questions, so it only
-        # fills a slot if nothing else is left.
-        picks: list[tuple[str, float]] = []   # (axis, score)
+        # Spread across *primary* dimensions (deprioritising 'analogy', which over-appears
+        # and yields metaphor questions), then fill remaining slots so we surface up to
+        # max_questions distinct candidates. Paper-specificity comes from the content fed
+        # into _work, so even a repeated primary yields a different question.
+        picks: list = []                 # list of (cand, axis, score)
+        picked_ids: set[str] = set()
         used: set[str] = set()
-        for allow_analogy in (False, True):
+        for stage in ("distinct-nonanalogy", "distinct-any", "fill"):
             for ev in promising:
                 if len(picks) >= self._max:
                     break
+                if ev.candidate_id in picked_ids:
+                    continue
                 cand = cand_by_id.get(ev.candidate_id)
                 if cand is None:
                     continue
                 axis = axis_of.get(cand.space_id, "open")
-                comps = components(axis)
-                if not allow_analogy and "analogy" in comps:
+                prim = primary(axis)
+                if stage == "distinct-nonanalogy" and ("analogy" in axis or prim in used):
                     continue
-                if any(c in used for c in comps):     # component-level de-dup
+                if stage == "distinct-any" and prim in used:
                     continue
-                used.update(comps)
-                picks.append((axis, ev.score))
+                picked_ids.add(ev.candidate_id)
+                used.add(prim)
+                picks.append((cand, axis, ev.score))
             if len(picks) >= self._max:
                 break
 
-        questions = pmap(lambda p: self._work(draft, p[0], p[1]), picks)
+        questions = pmap(lambda p: self._work(draft, p[0], p[1], p[2]), picks)
         summary = self._llm.phrase(
             "extension_summary",
             f"{draft.title} ({draft.topic}); {len(questions)} unasked questions across "
@@ -177,16 +182,23 @@ class PaperExtender:
             questions=questions, summary=summary,
         )
 
-    def _work(self, draft: PaperDraft, axis: str, score: float) -> OpenQuestion:
+    def _work(self, draft: PaperDraft, cand, axis: str, score: float) -> OpenQuestion:
+        # Ground the question in the paper's ACTUAL content (not just abstract + a generic
+        # axis label) so different papers get genuinely paper-specific questions. The axis
+        # and the routed direction are only soft hints to push past the obvious.
+        content = " ".join(f"[{s.heading}] {s.text}" for s in draft.sections)[:2600]
+        hint = getattr(cand, "content", "")[:200]
         ctx = (
             f"PAPER: {draft.title}\nFIELD: {draft.topic}\nABSTRACT: {draft.abstract}\n"
-            f"DIMENSION the paper does not work: {axis}"
+            f"CONTENT: {content}\nLENS (soft hint): {axis}"
         )
         question = self._llm.phrase(
             "open_question",
-            ctx + "\nPose ONE precise, substantive research question along that dimension "
-            "that the paper does not address. Be concrete and testable; no metaphors or "
-            "analogies, no anthropomorphic framing.",
+            ctx + f"\nROUTING HINT: {hint}\n"
+            "From THIS paper's specific content, pose ONE important research question the "
+            "paper does NOT address but that builds directly on its results. Reference the "
+            "paper's own constructs. Concrete and testable; no metaphors, no analogies, no "
+            "anthropomorphic framing.",
         )
         qctx = f"PAPER: {draft.title}\nFIELD: {draft.topic}\nQUESTION: {question}"
         return OpenQuestion(

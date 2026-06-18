@@ -273,9 +273,11 @@ def _extension_phrase(kind: str, ctx: str, seed: int) -> str:
     """Deterministic phrasing for the paper-extension kinds (offline MockLLM)."""
     term = (_salient_terms(ctx) or ("the central mechanism",))[0]
     axis = "an unexamined dimension"
-    if "DIMENSION" in ctx:
-        tail = ctx.split("DIMENSION", 1)[1]
-        axis = tail.split(":", 1)[-1].splitlines()[0].strip() or axis
+    for marker in ("LENS", "DIMENSION"):
+        if marker in ctx:
+            tail = ctx.split(marker, 1)[1]
+            axis = tail.split(":", 1)[-1].splitlines()[0].strip() or axis
+            break
     if kind == "open_question":
         return (
             f"Under what conditions does {term} still hold once the {axis} dimension is "
