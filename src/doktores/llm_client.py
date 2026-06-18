@@ -168,13 +168,14 @@ class MockLLM:
             )
             return opts[seed % len(opts)]
         if kind == "paper_rewrite":
-            head, _, rest = ctx.partition(":")
-            body, _, angle = rest.partition("|| angle:")
-            term = (_salient_terms(body) or _salient_terms(angle) or ("the mechanism",))[0]
+            # Context: "HEADING: ..\nORIGINAL: ..\nFIX THESE WEAKNESSES: ..\n<brief>".
+            body = ctx.split("ORIGINAL:", 1)[1] if "ORIGINAL:" in ctx else ctx
+            body = body.split("FIX THESE WEAKNESSES", 1)[0]
+            term = (_salient_terms(body) or ("the central claim",))[0]
             return (
-                f"{head.strip()} - revised. {_first_clause(body)}. Concretely, {term} is the "
-                "load-bearing element: we state it first, give the one condition under which it "
-                "fails, and tie the surrounding prose back to that single thread."
+                f"{_first_clause(body)}. Here {term} is stated first with the single condition "
+                "under which it would fail, the surrounding prose is tied back to that one "
+                "thread, and no new claims are introduced."
             )
         if kind == "paper_summary":
             return (
