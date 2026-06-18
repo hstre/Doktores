@@ -94,6 +94,15 @@ def test_fast_mode_still_produces_a_valid_package():
     assert len(pkg["section_improvements"]) == len(_draft().sections)
 
 
+def test_rewrite_client_speaks_the_doktores_phrasing_surface():
+    # Regression: the rewrite client must expose phrase()/phrase_list() (the Doktores
+    # surface), not Kevin's write_variant()/critique(). Construction is offline (no call).
+    from doktores.llm_client import OpenAICompatibleLLM as DoktoresLLM
+    rw = DoktoresLLM(model="anthropic/claude-opus-4.8",
+                     base_url="https://openrouter.ai/api/v1", api_key="dummy")
+    assert hasattr(rw, "phrase") and hasattr(rw, "phrase_list")
+
+
 def test_works_on_an_ad_hoc_draft():
     draft = PaperDraft(
         title="A Note on Caching Under Drift",

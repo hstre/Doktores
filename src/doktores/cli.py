@@ -109,7 +109,7 @@ def _run_paper_mode(args) -> int:
     if args.rewrite_model:
         import os
 
-        from .kevin.llm_client import OpenAICompatibleLLM
+        from .llm_client import OpenAICompatibleLLM
         rewrite_llm = OpenAICompatibleLLM(
             model=args.rewrite_model, base_url="https://openrouter.ai/api/v1",
             api_key=os.getenv("OPENROUTER_API_KEY"),
