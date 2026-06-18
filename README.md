@@ -112,6 +112,35 @@ python -m doktores "routing vs. recency under drift" --topic routing \
 python -m doktores --from-handoff examples/handoff.json --inbox out/research_inbox.json
 ```
 
+## Paper-improver mode (a second use of the same circle)
+
+The same controlled circle can be pointed at a **manuscript** instead of a Layer-9 conflict.
+Research mode is untouched; this is a parallel entry point.
+
+```bash
+make demo-paper                      # improve the bundled Reality Gap paper (offline)
+python -m doktores --demo-paper
+python -m doktores --improve-paper my_paper.json --personas 3
+```
+
+The input is a `PaperDraft` (`{title, topic, abstract, claims, sections:[{heading,text}]}`);
+the output is a `PaperImprovement` package: per section a set of **weaknesses**, one concrete
+**improvement angle**, a **suggestion**, and a **rewritten passage** — *Kritik + konkrete
+Rewrites*. Doktores still **advises, never decides**: which edits land is the author's call,
+and the rewrite must stay faithful to the paper's load-bearing `claims`.
+
+The ideation comes from an **improved Kevin vendored into this repo** (`doktores.kevin`):
+grounding on the section's own terms, *executed* (not merely labelled) method transfer,
+combinatorial blind-spot axes (e.g. `actor+boundary`), a falsification-hardening round,
+a Pareto/novelty-floor selector, diversity pressure, and a multi-persona ensemble. Every
+score and verdict is still a rule; the LLM only phrases. Offline-deterministic under the
+default MockLLM.
+
+```python
+from doktores import improve_paper, PaperDraft, Section
+pkg = improve_paper(PaperDraft(title="…", topic="…", sections=(Section("Intro", "…"),))).to_dict()
+```
+
 ## Integration seams
 
 * **Kevin** (`io_kevin.candidates_for`) — calls `Kevin().run(Problem(...))` and keeps the

@@ -1,4 +1,4 @@
-.PHONY: install test lint demo
+.PHONY: install test lint demo demo-paper
 
 install:
 	python -m pip install -e ".[dev]"
@@ -12,3 +12,6 @@ lint:
 demo:
 	python -m doktores "routing prefers locality but memory prefers recency under drift" \
 		--topic routing --id C-12 --candidate "recency is a proxy for relevance, not its cause"
+
+demo-paper:
+	python -m doktores --demo-paper

@@ -155,6 +155,32 @@ class MockLLM:
             )
         if kind == "review_reason":
             return _first_clause(ctx)
+        if kind == "paper_suggestion":
+            head, _, angle = ctx.partition("|| angle:")
+            term = (_salient_terms(head) or _salient_terms(angle) or ("the central claim",))[0]
+            opts = (
+                f"Make the role of {term} explicit up front, then let the rest of "
+                f"'{_first_clause(head)}' follow from it.",
+                f"Lead with the consequence for {term}; move the justification after it so the "
+                "reader meets the payoff before the machinery.",
+                f"State what would change if {term} were false - the section currently asserts "
+                "where it could discriminate.",
+            )
+            return opts[seed % len(opts)]
+        if kind == "paper_rewrite":
+            head, _, rest = ctx.partition(":")
+            body, _, angle = rest.partition("|| angle:")
+            term = (_salient_terms(body) or _salient_terms(angle) or ("the mechanism",))[0]
+            return (
+                f"{head.strip()} - revised. {_first_clause(body)}. Concretely, {term} is the "
+                "load-bearing element: we state it first, give the one condition under which it "
+                "fails, and tie the surrounding prose back to that single thread."
+            )
+        if kind == "paper_summary":
+            return (
+                "Across the manuscript the strongest leverage is sharper framing and explicit "
+                f"failure conditions: {_first_clause(ctx)}."
+            )
         return _first_clause(ctx)
 
     def phrase_list(self, kind: str, context: str, n: int) -> list[str]:
@@ -180,6 +206,20 @@ class MockLLM:
             )
             for i in range(n):
                 out.append(bank[(_seed(ctx) + i) % len(bank)])
+            return out
+        if kind in ("paper_weakness", "paper_global_weakness"):
+            terms = _salient_terms(ctx) or ("the central claim",)
+            frames = (
+                "{t} is asserted but never given an explicit condition under which it fails.",
+                "the prose around {t} mixes the claim with its justification, blurring both.",
+                "{t} is introduced without saying what it is being contrasted against.",
+                "the section leans on {t} as a label where a concrete mechanism is needed.",
+                "{t} is stated once and not tied back to the section's main thread.",
+            )
+            base = _seed(kind, ctx)
+            for i in range(n):
+                t = terms[i % len(terms)]
+                out.append(frames[(base + i) % len(frames)].format(t=t.capitalize()))
             return out
         for i in range(n):
             out.append(f"{kind} {i + 1}: {_first_clause(ctx)}")
