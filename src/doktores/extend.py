@@ -36,6 +36,7 @@ class OpenQuestion:
     test: str                 # how to validate / falsify that answer
     builds_toward: str        # what answering it would unlock
     novelty: float            # Kevin's calibrated opportunity score for the seed
+    verdict: str = "borderline"   # the Doktores triage: present | borderline | discard
 
     def to_dict(self) -> dict:
         return {
@@ -47,6 +48,7 @@ class OpenQuestion:
             "test": self.test,
             "builds_toward": self.builds_toward,
             "novelty": round(self.novelty, 4),
+            "verdict": self.verdict,
         }
 
 
@@ -65,19 +67,24 @@ class PaperExtension:
         return stable_id("PX", self.paper_id, *(q.question for q in self.questions))
 
     def to_dict(self) -> dict:
+        counts = {"present": 0, "borderline": 0, "discard": 0}
+        for q in self.questions:
+            counts[q.verdict] = counts.get(q.verdict, 0) + 1
         return {
             "id": self.id,
             "paper_id": self.paper_id,
             "title": self.title,
             "topic": self.topic,
             "questions": [q.to_dict() for q in self.questions],
+            "triage": counts,  # how the Doktores split nonsense from what to examine
             "summary": self.summary,
         }
 
 
-PAPER_EXTENSION_KEYS = ("id", "paper_id", "title", "topic", "questions", "summary")
+PAPER_EXTENSION_KEYS = ("id", "paper_id", "title", "topic", "questions", "triage", "summary")
 _Q_KEYS = ("axis", "method", "question", "why_open", "approach", "test", "builds_toward",
-           "novelty")
+           "novelty", "verdict")
+_VERDICTS = ("present", "borderline", "discard")
 
 # The bold, content-free Denkbewegungen worth applying to a blind spot - the ones that
 # reframe rather than merely re-check. We prefer these over the diligent-reviewer methods
@@ -106,6 +113,8 @@ def validate_paper_extension(pkg: dict) -> list[str]:
             nov = q.get("novelty")
             if not isinstance(nov, int | float) or not (0.0 <= float(nov) <= 1.0):
                 problems.append(f"question[{i}] novelty must be in [0,1]: {nov}")
+            if q.get("verdict") not in _VERDICTS:
+                problems.append(f"question[{i}] verdict not in {_VERDICTS}: {q.get('verdict')}")
     return problems
 
 
@@ -204,6 +213,14 @@ class PaperExtender:
                 break
 
         questions = pmap(lambda p: self._work(draft, *p), picks)
+
+        # The Doktores triage (the critical stage): separate total nonsense from what is
+        # worth putting before examiners. Kevin generates wild; the Doctoren judge. The LLM
+        # only reads each question into signals - the verdict is a rule.
+        verdicts = pmap(lambda q: self._triage(draft, q), questions)
+        for q, v in zip(questions, verdicts, strict=True):
+            q.verdict = v
+
         summary = self._llm.phrase(
             "extension_summary",
             f"{draft.title} ({draft.topic}); {len(questions)} unasked questions across "
@@ -213,6 +230,19 @@ class PaperExtender:
             paper_id=draft.id, title=draft.title, topic=draft.topic,
             questions=questions, summary=summary,
         )
+
+    def _triage(self, draft: PaperDraft, q: OpenQuestion) -> str:
+        """Rule-based verdict from the LLM-read signals: present | borderline | discard.
+
+        Discard the incoherent and the far-fetched-without-a-test (the 'totaler Quatsch');
+        present what is grounded, testable and non-trivial; everything else is borderline.
+        """
+        s = self._llm.triage_question(q.question, f"{draft.title}. {draft.abstract}")
+        if not s.get("coherent") or (s.get("overreaching") and not s.get("testable")):
+            return "discard"
+        if s.get("grounded") and s.get("testable") and s.get("nontrivial"):
+            return "present"
+        return "borderline"
 
     def _work(
         self, draft: PaperDraft, cand, axis: str, method: str,

@@ -44,6 +44,26 @@ def test_questions_apply_named_methods_incl_unusual():
     assert any(m in UNUSUAL_METHODS for m in methods), methods
 
 
+def test_every_question_gets_a_triage_verdict():
+    pkg = extend_paper(rg_paper_draft(), max_questions=4).to_dict()
+    assert set(pkg["triage"]) == {"present", "borderline", "discard"}
+    assert sum(pkg["triage"].values()) == len(pkg["questions"])
+    for q in pkg["questions"]:
+        assert q["verdict"] in ("present", "borderline", "discard")
+
+
+def test_triage_discards_far_fetched_untestable_questions():
+    from doktores import PaperExtender
+    from doktores.extend import OpenQuestion
+    ext = PaperExtender()  # offline MockLLM
+    quatsch = OpenQuestion(
+        axis="analogy", method="structural_analogy_transport",
+        question="Just as a Roman aqueduct mirrors the soul, is the framework basically vibes?",
+        why_open="", approach="", test="", builds_toward="", novelty=0.5,
+    )
+    assert ext._triage(rg_paper_draft(), quatsch) == "discard"
+
+
 def test_extension_is_replay_stable():
     a = extend_paper(rg_paper_draft()).to_dict()
     b = extend_paper(rg_paper_draft()).to_dict()

@@ -66,6 +66,11 @@ class LLMClient(Protocol):
     def phrase_list(self, kind: str, context: str, n: int) -> list[str]:
         """Word ``n`` short artefacts of one kind (refutation conditions, concerns, …)."""
 
+    def triage_question(self, question: str, context: str) -> dict:
+        """Read a candidate research question into structured booleans for triage:
+        ``grounded`` / ``testable`` / ``coherent`` / ``nontrivial`` / ``overreaching``.
+        Language work only - the LLM *reads*; the verdict is decided by rules elsewhere."""
+
 
 # --------------------------------------------------------------------------- #
 # The offline default
@@ -230,6 +235,24 @@ class MockLLM:
         for i in range(n):
             out.append(f"{kind} {i + 1}: {_first_clause(ctx)}")
         return out
+
+    def triage_question(self, question: str, context: str) -> dict:
+        q = question.lower()
+        ctx_terms = set(_salient_terms(context)[:10])
+        q_terms = set(_salient_terms(question))
+        return {
+            "grounded": bool(ctx_terms & q_terms) if ctx_terms else True,
+            "testable": any(w in q for w in (
+                "measure", "metric", "rate", "compare", "test", "predict", "fraction",
+                "correl", "experiment", "dataset", "benchmark",
+            )),
+            "coherent": "?" in question and len(question) > 30,
+            "nontrivial": len(question) > 90,
+            # decorative far-domain reaches are the 'Quatsch' signature
+            "overreaching": any(w in q for w in (
+                "just as", "like a", "mirror", "luddite", "roman", "asteroid", "aqueduct",
+            )),
+        }
 
 
 _PAPER_PROSE = {
@@ -422,6 +445,22 @@ class OpenAICompatibleLLM:
         user = f"Context: {context}"
         lines = [ln.strip(" -*\t") for ln in self._chat(system, user, temperature=0.5).splitlines()]
         return [ln for ln in lines if ln][:n]
+
+    def triage_question(self, question: str, context: str) -> dict:
+        system = (
+            "You judge whether a proposed research question is sound enough to put before "
+            "examiners, or is nonsense/overreach. You do NOT decide a verdict; you only report "
+            'booleans. Reply as JSON with keys: grounded (tied to the paper\'s actual content), '
+            "testable (has a concrete empirical test), coherent (well-posed, not word-salad), "
+            "nontrivial (not a trivial restatement), overreaching (relies on a far-fetched or "
+            "decorative leap). All booleans."
+        )
+        user = f"Paper context: {context[:1500]}\nQuestion: {question}"
+        data = self._parse_json(self._chat(system, user, temperature=0.0, json=True))
+        return {
+            k: bool(data.get(k))
+            for k in ("grounded", "testable", "coherent", "nontrivial", "overreaching")
+        }
 
 
 def get_default_client() -> LLMClient:
