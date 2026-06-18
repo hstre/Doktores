@@ -60,11 +60,6 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--rewrite-model", metavar="MODEL",
                    help="paper mode: route only the final rewrite to this big OpenRouter model "
                         "(e.g. anthropic/claude-opus-4.8); needs OPENROUTER_API_KEY")
-    p.add_argument("--extend", action="store_true",
-                   help="paper EXTEND mode: instead of improving, find the questions the paper "
-                        "does not ask and sketch how to answer them")
-    p.add_argument("--max-questions", type=int, default=4,
-                   help="extend mode: how many unasked questions to surface")
     return p
 
 
@@ -109,15 +104,6 @@ def _run_paper_mode(args) -> int:
         draft = rg_paper_draft()
     else:
         draft = _load_paper(args.improve_paper)
-
-    # Extend mode: surface the unasked questions instead of improving the prose.
-    if args.extend:
-        from .extend import extend_paper
-        pkg = extend_paper(draft, max_questions=args.max_questions,
-                           personas=args.personas).to_dict()
-        print(json.dumps(pkg, ensure_ascii=False, indent=2))
-        print(f"  - {pkg['id']}: {len(pkg['questions'])} unasked question(s)", flush=True)
-        return 0
 
     rewrite_llm = None
     if args.rewrite_model:
