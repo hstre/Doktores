@@ -23,6 +23,7 @@ Public surface:
 from __future__ import annotations
 
 from .human_gate import Briefing, build_briefing
+from .llm_client import MockLLM, MultiModelLLM, OpenAICompatibleLLM, get_default_client
 from .method_library import MethodLibrary, extract_method
 from .models import (
     Affinity,
@@ -56,6 +57,10 @@ __all__ = [
     "Affinity",
     "Verdict",
     "WildMove",
+    "MockLLM",
+    "OpenAICompatibleLLM",
+    "MultiModelLLM",
+    "get_default_client",
 ]
 
 __version__ = "0.1.0"
